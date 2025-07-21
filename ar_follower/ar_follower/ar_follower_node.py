@@ -67,6 +67,7 @@ class ARFollowerNode(Node):
 
         kp_frame, des_frame = self.orb.detectAndCompute(gray, None)
         if des_frame is None:
+            self.cmd_pub.publish(Twist())
             self.get_logger().warn("Marker not found, rover stopped.")
             return  # no features in frame
 
@@ -74,7 +75,7 @@ class ARFollowerNode(Node):
         matches = sorted(matches, key=lambda x: x.distance)
 
         # c) Keep “good” matches
-        good = matches[:10]  # tune this threshold
+        good = matches[:50]  # tune this threshold
         if len(good) < 10:
             self.cmd_pub.publish(Twist())
             self.get_logger().warn(f"Too few matches ({len(good)}), stopping")
