@@ -25,12 +25,12 @@ class OpticalStopper(Node):
         )
 
         # Publisher to cmd_vel
-        self.pub = self.create_publisher(Twist, /cmd_vel, 5)
+        self.pub = self.create_publisher(Twist, "/cmd_vel", 5)
 
         self.get_logger().info("Intialized Stopper")
 
     def cb_image(self, msg: Image):
-        frame = self.bridge.imgmsg_tocv2(msg, 'bgr8')
+        frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # To have two images to compare

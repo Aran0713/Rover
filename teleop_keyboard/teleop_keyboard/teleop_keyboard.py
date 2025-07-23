@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys, select, termios, tty
 import rclpy 
-import rclpy.node import Node
+from rclpy.node import Node
 from geometry_msgs.msg import Twist
 
 
@@ -11,7 +11,7 @@ class TeleopNode(Node):
         super().__init__('teleop_keyboard')
 
         # Create publisher on /cmd_vel
-        self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         self.settings = termios.tcgetattr(sys.stdin)
         # Log on Terminal 
@@ -47,21 +47,24 @@ class TeleopNode(Node):
 
                 # Build Twist
                 twist = Twist()
+                
                 if key == 'w':
-                    twist.linear.x = 0.2
+                    twist.linear.x = 10.0
                 elif key == 's':
-                    twist.linear.x = -0.2
+                    twist.linear.x = -10.0
                 elif key == 'a':
-                    twist.angular.z = 0.5
+                    twist.angular.z = 10.0
                 elif key == 'd':
-                    twist.angular.z = -0.5
-                else:
-                    twist.linear.x = 0
-                    twist.angular.z = 0
+                    twist.angular.z = -10.0
+                # else:
+                #     twist.linear.x = 0.0
+                #     twist.angular.z = 0.0
 
                 # Sends the command to the topic /cmd_vel and logs it
                 self.pub.publish(twist)
-                self.get_logger().info(f"Key '{key}': lin{twist.linear.x}, ang={twist.angular.z}")
+                if key:
+                    self.get_logger().info(f"Key '{key}': lin{twist.linear.x}, ang={twist.angular.z}")
+                # self.get_logger().info(f"Key '{key}': lin{twist.linear.x}, ang={twist.angular.z}")
 
         except Exception as e:
             self.get_logger().error(f"Error in teleop loop: {e}")
@@ -80,7 +83,7 @@ class TeleopNode(Node):
 def main(args=None):
 
     # Boots up Ros 2
-    rslpy.init(args=args) 
+    rclpy.init(args=args) 
     # Creates an instance of the TeleopNode
     node = TeleopNode()
     # Calls the loop function
