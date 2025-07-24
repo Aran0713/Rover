@@ -15,7 +15,7 @@ class ARFollowerNode(Node):
         # Subscriber to camera images
         self.image_sub = self.create_subscription(
             Image,
-            '/camera/image_raw',  # Adjust if your topic is different
+            '/camera/image_raw',  
             self.image_callback,
             10
         )
@@ -27,7 +27,7 @@ class ARFollowerNode(Node):
         self.bridge = CvBridge()
 
 
-        # 1) LOAD your marker image once
+        # Load your marker image once
         share_dir = get_package_share_directory('ar_follower')
         template_path = os.path.join(share_dir, 'resource', 'marker0.png')
         self.template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
@@ -36,7 +36,7 @@ class ARFollowerNode(Node):
             rclpy.shutdown()
             return
 
-        # 2) SET UP ORB detector and BF matcher
+        # ORB detector and BF matcher
         self.orb = cv2.ORB_create(1000)
         self.kp_template, self.des_template = self.orb.detectAndCompute(self.template, None)
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
@@ -74,14 +74,14 @@ class ARFollowerNode(Node):
         matches = self.bf.match(self.des_template, des_frame)
         matches = sorted(matches, key=lambda x: x.distance)
 
-        # c) Keep “good” matches
-        good = matches[:50]  # tune this threshold
+        # Keep matches
+        good = matches[:50]  # threshold
         if len(good) < 10:
             self.cmd_pub.publish(Twist())
             self.get_logger().warn(f"Too few matches ({len(good)}), stopping")
             return
 
-        # d) Compute homography
+        # Compute homography
         src_pts = np.float32([ self.kp_template[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
         dst_pts = np.float32([ kp_frame [m.trainIdx].pt for m in good ]).reshape(-1,1,2)
         H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
@@ -90,21 +90,21 @@ class ARFollowerNode(Node):
             self.get_logger().warn("Homography failed, stopping")
             return
 
-        # e) Project template corners to image to get polygon
+        # Project template corners to image to get polygon
         h, w = self.template.shape
         corners = np.float32([ [0,0],[w,0],[w,h],[0,h] ]).reshape(-1,1,2)
         projected = cv2.perspectiveTransform(corners, H)
 
-        # f) Compute centroid & apparent width
+        # Compute centroid & apparent width
         cx = projected[:,0,0].mean()
         pixel_width = np.linalg.norm(projected[1,0] - projected[0,0])
 
-        # g) Convert to real‑world pose (using pinhole model)
+        # Convert to real‑world pose (using pinhole model)
         fx = self.camera_matrix[0,0]
-        z = (0.10 * fx) / pixel_width          # 0.10 m = real marker width
+        z = (0.10 * fx) / pixel_width          # 0.10 m is real marker width
         x = ((cx - self.camera_matrix[0,2]) / fx) * z
 
-        # h) Proportional control
+        # Proportional control
         linear_vel  = self.linear_kp * (z - self.target_distance)
         angular_vel = -self.angular_kp * x
         linear_vel  = np.clip(linear_vel, -0.2, 0.3)
