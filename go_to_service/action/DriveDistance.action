@@ -1,0 +1,10 @@
+# Goal: move forward by this distance (m) at this speed (m/s)
+float32 distance
+float32 speed
+---
+# Result: did we succeed, and how far did we actually travel?
+bool    success
+float32 travelled
+---
+# Feedback: how much remains?
+float32 remaining

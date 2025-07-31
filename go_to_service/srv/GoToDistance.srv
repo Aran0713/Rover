@@ -1,0 +1,7 @@
+# Request: how far & how fast
+float32 distance
+float32 speed
+---
+# Response: did we succeed + note
+bool   success
+string message
