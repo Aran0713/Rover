@@ -27,7 +27,7 @@ class ToggleTeleopNode(Node):
         )
 
         # Timer
-        self.timer = self.create_timer(0.1, run_teleop)
+        self.timer = self.create_timer(0.1, self.run_teleop)
 
         self.get_logger().info("Toggle is ready (call /enable_teleop to turn on and off) and Press W,A,S,D to drive")
 

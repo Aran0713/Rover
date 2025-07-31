@@ -49,6 +49,9 @@ class ToggleServiceNode(Node):
 
         if not request.data:
             self.pub.publish(Twist()) # stops the rover
+            cv2.destroyWindow('Vision Enabled')
+
+        return response
 
     def image_callback(self, msg):
         
