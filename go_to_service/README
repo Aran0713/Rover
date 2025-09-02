@@ -1,0 +1,11 @@
+To Run:
+
+Terminal 1:
+colcon build --symlink-install --packages-select go_to_interfaces go_to_service
+source install/setup.bash
+ros2 run go_to_service drive_distance_server
+
+Terminal 2:
+colcon build --symlink-install --packages-select go_to_interfaces go_to_service
+source install/setup.bash
+ros2 action send_goal /drive_distance go_to_interfaces/action/DriveDistance "{distance: 1.0, speed: 0.4}" --feedback

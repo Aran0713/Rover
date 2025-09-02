@@ -5,6 +5,7 @@ import rclpy
 from rclpy.node import Node
 from std_srvs.srv import SetBool
 from geometry_msgs.msg import Twist
+import cv2
 
 
 class ToggleTeleopNode(Node):

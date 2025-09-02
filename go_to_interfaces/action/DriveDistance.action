@@ -1,0 +1,7 @@
+float32 distance
+float32 speed
+---
+bool success
+float32 travelled
+---
+float32 remaining

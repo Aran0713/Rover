@@ -1,0 +1,10 @@
+float32 target_x
+float32 target_y
+float32 max_speed
+---
+bool success
+float32 elapsed
+string message
+---
+float32 remaining
+string state
