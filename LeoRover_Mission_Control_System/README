@@ -1,43 +1,59 @@
-How to get it working:
-Open this folder in terminal (powershell) or transfer this folder to a folder in windows filesystem 
-run:
-winget source update
-winget install -e --id Microsoft.OpenJDK.17
-choco install -y maven
-java --version
-mvn -v
+# Yamcs QuickStart
 
-Run once in admin powershell:
-netsh advfirewall firewall add rule name="Yamcs UDP 10050-10051" dir=in action=allow protocol=UDP localport=10050-10051
-netsh advfirewall firewall add rule name="Yamcs Web 8090" dir=in action=allow protocol=TCP localport=8090
+This repository holds the source code to start a basic Yamcs application that monitors a simulated spacecraft in low earth orbit.
+
+You may find it useful as a starting point for your own project.
 
 
-To run:
-mvn org.yamcs:yamcs-maven-plugin:1.3.5:run
-Then open browser: http://localhost:8090
+## Prerequisites
+
+* Java 17+
+* Linux x64/aarch64, macOS x64/aarch64, or Windows x64
+
+A copy of Maven is also required, however this gets automatically downloaded an installed by using the `./mvnw` shell script as detailed below.
 
 
+## Running Yamcs
 
-Note:
-To check if rover can reach the YAMCS server, ping the server from rover's command line:
-ping -c 2 10.0.0.186
-You can also see if the YAMCS server is receiving packets, paste this in rover terminal:
-python3 - <<'PY' import socket, json
-msg={"parameters":[{"id":{"name":"/leorover/ODOM/x"},"engValue":{"type":"DOUBLE","doubleValue":99.0}}]}
-socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(json.dumps(msg).encode(), ("127.0.0.1", 10050)) 
-print("sent 99.0 to localhost:10050") 
-PY
+Here are some commands to get things started:
 
-To find Laptop IP for rover to send to, run on windows (Find the IPv4 address of your active adapter (Wi-Fi)):
-ipconfig
+Compile this project:
 
-For my laptop:
-YAMCS_PARAM_HOST = '10.0.0.186'
+    ./mvnw compile
 
-To find rover IP for laptop to send to, run on rover:
-hostname -I  
+Start Yamcs on localhost:
 
+    ./mvnw yamcs:run
 
+Same as yamcs:run, but allows a debugger to attach at port 7896:
 
+    ./mvnw yamcs:debug
+    
+Delete all generated outputs and start over:
+
+    ./mvnw clean
+
+This will also delete Yamcs data. Change the `dataDir` property in `yamcs.yaml` to another location on your file system if you don't want that.
 
 
+## Telemetry
+
+To start pushing CCSDS packets into Yamcs, run the included Python script:
+
+    python simulator.py
+
+This script will send packets at 1 Hz over UDP to Yamcs. There is enough test data to run for a full calendar day.
+
+The packets are a bit artificial and include a mixture of HK and accessory data.
+
+
+## Telecommanding
+
+This project defines a few example CCSDS telecommands. They are sent to UDP port 10025. The simulator.py script listens to this port. Commands  have no side effects. The script will only count them.
+
+
+## Bundling
+
+Running through Maven is useful during development, but it is not recommended for production environments. Instead bundle up your Yamcs application in a tar.gz file:
+
+    ./mvnw package
