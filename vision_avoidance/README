@@ -1,3 +1,7 @@
+To transfer:
+ros2 pkg create vision_avoidance --build-type ament_python --dependencies rclpy geometry_msgs nav_msgs sensor_msgs cv_bridge
+scp -r /home/aran/Rover/vision_avoidance pi@10.0.0.1:/home/pi/ros_ws/src
+
 To Run:
 
 Terminal 1:
