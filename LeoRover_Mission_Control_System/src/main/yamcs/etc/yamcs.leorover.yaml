@@ -1,0 +1,58 @@
+services:
+  # - class: org.yamcs.http.HttpServer   # provided globally too
+
+  # Recorders & services commonly expected by the UI
+  - class: org.yamcs.archive.XtceTmRecorder
+  - class: org.yamcs.archive.ParameterRecorder
+  - class: org.yamcs.archive.AlarmRecorder
+  - class: org.yamcs.archive.EventRecorder
+  - class: org.yamcs.archive.CommandHistoryRecorder
+  - class: org.yamcs.parameterarchive.ParameterArchive
+    args:
+      realtimeFiller:
+        enabled: true
+
+  # Create the 'realtime' processor so pages have a context
+  - class: org.yamcs.ProcessorCreatorService
+    args:
+      name: realtime
+      type: realtime
+
+dataLinks:
+  # Telemetry: receive ParameterData over UDP as JSON on pp_realtime
+  - name: udp-params-in
+    class: org.yamcs.tctm.UdpParameterDataLink
+    stream: pp_realtime
+    port: 10050
+    json: true
+
+  # Commands: Yamcs emits one datagram per command; your ROS bridge listens
+  - name: udp-tc-out
+    class: org.yamcs.tctm.UdpTcDataLink
+    stream: tc_realtime
+    # host: 127.0.0.1
+    host: 10.0.0.1
+    port: 10051
+    # Default GenericCommandPostprocessor produces the raw argument bytes in order
+
+mdb:
+  - type: xtce
+    args:
+      file: mdb/xtce.xml
+
+# Streams created at startup and bound to 'realtime'
+streamConfig:
+  # processed-parameter streams used by the Parameter link and stored by ParameterRecorder
+  param: ["pp_realtime", "sys_param", "proc_param"]
+
+  # command history and events (UI expects these)
+  cmdHist: ["cmdhist_realtime"]
+  event:   ["events_realtime"]
+
+  # Alarm handling
+  parameterAlarm: ["alarms_realtime"]
+
+  # command streams (used by Command Releaser + udp-tc-out)
+  tc:
+    - name: "tc_realtime"
+      processor: "realtime"

@@ -1,0 +1,4 @@
+mdb:
+  - type: xtce
+    args:
+      file: mdb/xtce.xml

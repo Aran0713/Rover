@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SpaceSystem name="leorover"
+  xmlns="http://www.omg.org/spec/XTCE/20180204"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.omg.org/spec/XTCE/20180204 https://www.omg.org/spec/XTCE/20180204/SpaceSystem.xsd">
+
+  <!-- Root-level types -->
+  <TelemetryMetaData>
+    <ParameterTypeSet>
+      <FloatParameterType name="float32">
+        <FloatDataEncoding sizeInBits="32" encoding="IEEE754_1985"/>
+      </FloatParameterType>
+      <FloatParameterType name="float64">
+        <FloatDataEncoding sizeInBits="64" encoding="IEEE754_1985"/>
+      </FloatParameterType>
+    </ParameterTypeSet>
+  </TelemetryMetaData>
+
+  <!-- ODOM space system with your odometry parameters -->
+  <SpaceSystem name="ODOM">
+    <TelemetryMetaData>
+      <ParameterSet>
+        <Parameter name="x"               parameterTypeRef="float64"/>
+        <Parameter name="y"               parameterTypeRef="float64"/>
+        <Parameter name="yaw"             parameterTypeRef="float64"/>
+        <Parameter name="linear_speed"    parameterTypeRef="float64"/>
+        <Parameter name="angular_speed"   parameterTypeRef="float64"/>
+        <Parameter name="distance_total"  parameterTypeRef="float64"/>
+      </ParameterSet>
+    </TelemetryMetaData>
+  </SpaceSystem>
+
+  <!-- CMD space system with two commands -->
+  <SpaceSystem name="CMD">
+    <CommandMetaData>
+      <ArgumentTypeSet>
+      <FloatArgumentType name="f32_be">
+        <FloatDataEncoding sizeInBits="32" encoding="IEEE754_1985"/>
+      </FloatArgumentType>
+    </ArgumentTypeSet>
+
+    <MetaCommandSet>
+
+      <!-- 0x01: Drive distance (m) at up to speed (m/s) -->
+      <MetaCommand name="DriveDistance" shortDescription="Closed-loop drive a distance (m)">
+        <ArgumentList>
+          <Argument name="distance_m" argumentTypeRef="f32_be"/>
+          <Argument name="speed_mps"  argumentTypeRef="f32_be"/>
+        </ArgumentList>
+        <CommandContainer name="DriveDistanceC">
+          <EntryList>
+            <FixedValueEntry binaryValue="1" sizeInBits="8"/>
+            <ArgumentRefEntry argumentRef="distance_m"/>
+            <ArgumentRefEntry argumentRef="speed_mps"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
+
+      <!-- 0x02: Turn angle (deg) with optional rate (deg/s) -->
+      <MetaCommand name="TurnAngle" shortDescription="Closed-loop turn angle (deg)">
+        <ArgumentList>
+          <Argument name="angle_deg"  argumentTypeRef="f32_be"/>
+          <Argument name="rate_degps" argumentTypeRef="f32_be"/>
+        </ArgumentList>
+        <CommandContainer name="TurnAngleC">
+          <EntryList>
+            <FixedValueEntry binaryValue="2" sizeInBits="8"/>
+            <ArgumentRefEntry argumentRef="angle_deg"/>
+            <ArgumentRefEntry argumentRef="rate_degps"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
+
+      <!-- 0xFF: Stop -->
+      <MetaCommand name="Stop" shortDescription="Stop motion">
+        <CommandContainer name="StopC">
+          <EntryList>
+            <FixedValueEntry binaryValue="0" sizeInBits="8"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
+
+    </MetaCommandSet>
+    </CommandMetaData>
+  </SpaceSystem>
+</SpaceSystem>
