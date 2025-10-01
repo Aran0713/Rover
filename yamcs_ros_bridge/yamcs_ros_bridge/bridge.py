@@ -354,15 +354,11 @@ class YamcsRosBridge(Node):
 
 
     def _send_via_cfdp(self, img_path: Path, meta_path: Path):
-        """
-        Use cfdp-py source handler to emit PDUs, send them over UDP to Yamcs (udp-cfdp-in).
-        Yamcs CFDP service will reassemble into bucket 'leocam' on ground.
-        """
         from cfdppy.handler.source import SourceHandler
         from cfdppy.request import PutRequest
         import socket as _s
 
-        # Helper: send one PDU datagram to Yamcs udp-cfdp-in (tm_cfdp @ port 10060)
+        # send one PDU datagram to Yamcs udp-cfdp-in 
         def send_pdu(raw: bytes):
             s = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
             s.sendto(raw, (CFDP_UDP_OUT_HOST, CFDP_UDP_IN_PORT))
@@ -370,20 +366,20 @@ class YamcsRosBridge(Node):
 
         # Send image
         put_img = PutRequest(
-            source_entity_id=CFDP_REMOTE_ROVER,      # rover id = 5
-            dest_entity_id=CFDP_LOCAL_GROUND,        # ground id = 11
-            source_file=str(img_path),               # local file to send
-            dest_path=f"{img_path.name}",            # object name on ground
-            acknowledged=False,                      # class 1 first (simpler on LAN)
-            closure_requested=True                   # ask for Finished PDU (useful confirmation)
+            source_entity_id=CFDP_REMOTE_ROVER,      
+            dest_entity_id=CFDP_LOCAL_GROUND,        
+            source_file=str(img_path),              
+            dest_path=f"{img_path.name}",           
+            acknowledged=False,                      
+            closure_requested=True                  
         )
-        sh = SourceHandler()                         # class generating PDUs for send
-        sh.put_request(put_img)                      # queue request
+        sh = SourceHandler()                        
+        sh.put_request(put_img)                    
         while True:
-            pdu = sh.get_next_packet()               # returns next CFDP PDU object (or None)
+            pdu = sh.get_next_packet()              
             if pdu is None:
                 break
-            send_pdu(pdu.to_bytes())                 # send serialized bytes over UDP
+            send_pdu(pdu.to_bytes())               
 
         # Send JSON sidecar
         put_json = PutRequest(
