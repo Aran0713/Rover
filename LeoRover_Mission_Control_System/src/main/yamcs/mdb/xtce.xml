@@ -10,9 +10,14 @@
       <FloatParameterType name="float32">
         <FloatDataEncoding sizeInBits="32" encoding="IEEE754_1985"/>
       </FloatParameterType>
+
       <FloatParameterType name="float64">
         <FloatDataEncoding sizeInBits="64" encoding="IEEE754_1985"/>
       </FloatParameterType>
+
+      <StringParameterType name="string_ascii">
+        <!-- Plain ASCII/UTF-8 by convention -->
+      </StringParameterType>
     </ParameterTypeSet>
   </TelemetryMetaData>
 
@@ -20,12 +25,19 @@
   <SpaceSystem name="ODOM">
     <TelemetryMetaData>
       <ParameterSet>
-        <Parameter name="x"               parameterTypeRef="float64"/>
-        <Parameter name="y"               parameterTypeRef="float64"/>
-        <Parameter name="yaw"             parameterTypeRef="float64"/>
-        <Parameter name="linear_speed"    parameterTypeRef="float64"/>
-        <Parameter name="angular_speed"   parameterTypeRef="float64"/>
-        <Parameter name="distance_total"  parameterTypeRef="float64"/>
+        <Parameter name="last_photo_bucket" parameterTypeRef="string_ascii"/>
+        <Parameter name="last_photo_object" parameterTypeRef="string_ascii"/>
+        <Parameter name="last_photo_url"    parameterTypeRef="string_ascii"/>
+        <Parameter name="last_photo_time_est" parameterTypeRef="string_ascii"/>
+        <Parameter name="last_photo_time_utc" parameterTypeRef="string_ascii"/>
+
+        <Parameter name="x" parameterTypeRef="float64"/>
+        <Parameter name="y" parameterTypeRef="float64"/>
+        <Parameter name="yaw" parameterTypeRef="float64"/>
+        <Parameter name="linear_speed" parameterTypeRef="float64"/>
+        <Parameter name="angular_speed" parameterTypeRef="float64"/>
+        <Parameter name="distance_total" parameterTypeRef="float64"/>
+        <Parameter name="battery" parameterTypeRef="float64"/>
       </ParameterSet>
     </TelemetryMetaData>
   </SpaceSystem>
@@ -67,6 +79,16 @@
             <FixedValueEntry binaryValue="2" sizeInBits="8"/>
             <ArgumentRefEntry argumentRef="angle_deg"/>
             <ArgumentRefEntry argumentRef="rate_degps"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
+
+      <!-- ADDED: 0x03 TakePhoto command -->
+      <MetaCommand name="TakePhoto" shortDescription="Capture an image and store it with metadata">
+        <CommandContainer name="TakePhotoC">
+          <EntryList>
+            <!-- fixed first byte 3 indicates TakePhoto to your ROS bridge -->
+            <FixedValueEntry binaryValue="3" sizeInBits="8"/>
           </EntryList>
         </CommandContainer>
       </MetaCommand>

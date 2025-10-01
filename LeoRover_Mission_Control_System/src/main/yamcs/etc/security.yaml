@@ -1,0 +1,6 @@
+# Enable authentication/authorization on the server
+enabled: true
+
+# Use YAML-based users/roles
+authModules:
+  - class: org.yamcs.security.YamlAuthModule

@@ -3,6 +3,8 @@ services:
 
   # Recorders & services commonly expected by the UI
   - class: org.yamcs.archive.XtceTmRecorder
+    args:
+      streams: []
   - class: org.yamcs.archive.ParameterRecorder
   - class: org.yamcs.archive.AlarmRecorder
   - class: org.yamcs.archive.EventRecorder
@@ -12,11 +14,33 @@ services:
       realtimeFiller:
         enabled: true
 
-  # Create the 'realtime' processor so pages have a context
+  # Create the realtime processor 
   - class: org.yamcs.ProcessorCreatorService
     args:
       name: realtime
       type: realtime
+
+  # CFDP service
+  - class: org.yamcs.cfdp.CfdpService
+    name: cfdp0
+    args:
+      sequenceNrLength: 4
+      maxPduSize: 512
+      incomingBucket: "leocam"
+      sleepBetweenPdus: 5
+      inStream: tm_cfdp
+      outStream: tc_cfdp
+      localEntities:
+        - name: ground
+          id: 11
+          bucket: "leocam"
+      remoteEntities:
+        - name: rover
+          id: 5
+      senderFaultHandlers:
+        AckLimitReached: suspend
+      receiverFaultHandlers:
+        AckLimitReached: suspend
 
 dataLinks:
   # Telemetry: receive ParameterData over UDP as JSON on pp_realtime
@@ -26,14 +50,32 @@ dataLinks:
     port: 10050
     json: true
 
-  # Commands: Yamcs emits one datagram per command; your ROS bridge listens
+  # Commands: Yamcs emits one datagram per command then the ROS bridge listens
   - name: udp-tc-out
     class: org.yamcs.tctm.UdpTcDataLink
     stream: tc_realtime
     # host: 127.0.0.1
     host: 10.0.0.1
     port: 10051
-    # Default GenericCommandPostprocessor produces the raw argument bytes in order
+
+  - name: udp-cfdp-out
+    class: org.yamcs.tctm.UdpTcDataLink
+    stream: tc_cfdp
+    host: 10.0.0.5
+    port: 10061
+    # commandPostprocessorClassName: org.yamcs.tctm.GenericCommandPostprocessor
+
+  # UDP TC/TM pair for CFDP PDUs over UDP
+  - name: udp-cfdp-in
+    class: org.yamcs.tctm.UdpTmDataLink
+    stream: tm_cfdp
+    port: 10060
+    packetPreprocessorClassName: org.yamcs.tctm.GenericPacketPreprocessor
+    packetPreprocessorArgs:
+      timestampOffset: -1
+      seqCountOffset: -1
+
+  
 
 mdb:
   - type: xtce
@@ -47,12 +89,18 @@ streamConfig:
 
   # command history and events (UI expects these)
   cmdHist: ["cmdhist_realtime"]
-  event:   ["events_realtime"]
+  event: ["events_realtime"]
 
   # Alarm handling
   parameterAlarm: ["alarms_realtime"]
+
+  # CFDP transport streams
+  tm:
+    - name: "tm_cfdp"
 
   # command streams (used by Command Releaser + udp-tc-out)
   tc:
     - name: "tc_realtime"
       processor: "realtime"
+
+    - name: "tc_cfdp"
