@@ -1,0 +1,3 @@
+Folders for running YAMCS:
+LeoRover_Mission_Control_System
+yamcs_ros_bridge
