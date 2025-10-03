@@ -393,7 +393,7 @@ class YamcsRosBridge(Node):
         }
         r = requests.post(f"{YAMCS_HTTP}/api/archive/{'leorover'}/events",
                           json=evt, auth=(HTTP_USER, HTTP_PASSWORD))
-        ########################## replace 'leorover' with your actual instance name in the URL    ################## IMPORTANT
+        ########################## replace 'leorover' with actual instance name in the URL    ################## IMPORTANT
         r.raise_for_status()
 
         self.get_logger().info(f"Uploaded to bucket {BUCKET_NAME} and posted event")
