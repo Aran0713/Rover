@@ -93,6 +93,31 @@
         </CommandContainer>
       </MetaCommand>
 
+      <!-- 0x04: StartTimedCapture(interval_sec, duration_sec) -->
+      <MetaCommand name="StartTimedCapture" shortDescription="Start periodic image+telemetry capture">
+        <ArgumentList>
+          <Argument name="interval_sec" argumentTypeRef="f32_be"/>
+          <Argument name="duration_sec" argumentTypeRef="f32_be"/>
+        </ArgumentList>
+        <CommandContainer name="StartTimedCaptureC">
+          <EntryList>
+            <FixedValueEntry binaryValue="4" sizeInBits="8"/>
+            <ArgumentRefEntry argumentRef="interval_sec"/>
+            <ArgumentRefEntry argumentRef="duration_sec"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
+
+      <!-- 0x05: StopTimedCapture() -->
+      <MetaCommand name="StopTimedCapture" shortDescription="Stop periodic capture session">
+        <CommandContainer name="StopTimedCaptureC">
+          <EntryList>
+            <FixedValueEntry binaryValue="5" sizeInBits="8"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
+
+
       <!-- 0xFF: Stop -->
       <MetaCommand name="Stop" shortDescription="Stop motion">
         <CommandContainer name="StopC">

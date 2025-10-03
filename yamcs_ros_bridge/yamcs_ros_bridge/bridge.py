@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import json, math, socket, struct, time
-import os
+import os, uuid
 from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -14,7 +14,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-import requests                                                
+import requests 
 
 
 # YAMCS_PARAM_HOST = '127.0.0.1'
@@ -73,8 +73,18 @@ class YamcsRosBridge(Node):
         self._dist_total = 0.0
         self._battery = 0.0
 
-        # Timer to poll for commands 
-        self.create_timer(0.02, self.poll_tc)
+        # Automatic capture states
+        self._timed_active = False
+        self._timed_session_id = None
+        self._timed_seq = 0
+        self._timed_interval = None
+        self._timed_command_time_utc = None
+        self._timed_next_due_mono = None
+        self._timed_end_mono = None
+        self.create_timer(0.02, self._timed_step) # timer
+
+        # Timer poll for commands 
+        self.create_timer(0.02, self.poll_tc) 
 
         # Commands control states
         self.active = None     
@@ -83,6 +93,20 @@ class YamcsRosBridge(Node):
         self._max_ang = 10.0  # 1.0
 
         self.get_logger().info("Bridge Established")
+
+
+    def _io_worker(self):
+        while True:
+            task = self._io_q.get()
+            if task is None:
+                break
+            img_path, meta_path, meta = task
+            try:
+                self._upload_via_http(img_path, meta_path, meta)
+            except Exception as e:
+                self.get_logger().error(f"Uploader error: {e}")
+            finally:
+                self._io_q.task_done()
 
     ######## Telemetry #################################################
 
@@ -123,11 +147,16 @@ class YamcsRosBridge(Node):
                 {"id": {"name": "/leorover/ODOM/angular_speed"}, "engValue": {"type":"DOUBLE","doubleValue": float(self._ang)}},
                 {"id": {"name": "/leorover/ODOM/distance_total"}, "engValue": {"type":"DOUBLE","doubleValue": float(self._dist_total)}},
                 {"id": {"name": "/leorover/ODOM/battery"}, "engValue": {"type":"DOUBLE","doubleValue": float(self._battery)}},
+
+                # {"id":{"name":"/leorover/ODOM/last_photo_bucket"}, "engValue":{"type":"STRING","stringValue": ""}},
+                # {"id":{"name":"/leorover/ODOM/last_photo_object"}, "engValue":{"type":"STRING","stringValue": ""}},
+                # {"id":{"name":"/leorover/ODOM/last_photo_time_est"}, "engValue":{"type":"STRING","stringValue": ""}},
+                # {"id":{"name":"/leorover/ODOM/last_photo_time_utc"}, "engValue":{"type":"STRING","stringValue": ""}},
             ]
         }
         data = json.dumps(payload).encode('utf-8')
         self.param_sock.sendto(data, (YAMCS_PARAM_HOST, YAMCS_PARAM_PORT))
-        # self.get_logger().info(f"Data: {data}")
+        self.get_logger().info(f"Data: {data}")
 
 
     ########## Drive Commands functions #############################################
@@ -226,7 +255,7 @@ class YamcsRosBridge(Node):
         self.cmd_pub.publish(twist)
 
     
-    ########## Take Photo Commands functions #############################################
+    ########## Take Photo Commands functions #########################################################
 
     def _img_cb(self, msg: Image):       
 
@@ -236,7 +265,20 @@ class YamcsRosBridge(Node):
         except Exception as e:
             self.get_logger().warn(f"CV Bridge error: {e}")
 
-    def _take_photo_and_write_files(self):
+    def _make_session_id(self, single: bool) -> tuple[str, str]:
+        """
+          timed:  YYYYMMDDThhmmssZ-xxxxxx
+          single: single-YYYYMMDDThhmmssZ-xxxxxx
+        """
+        t = datetime.now(timezone.utc)
+        ts = t.strftime("%Y%m%dT%H%M%SZ")  # seconds + 'Z'
+        suffix = uuid.uuid4().hex[:6]
+        sid = f"{ts}-{suffix}"
+        if single:
+            sid = f"single-{sid}"
+        return sid, t.isoformat()
+
+    def _take_photo_and_write_files(self, session_id: str, seq: int|None,interval_sec: float|None, command_time_utc: str):
         
         # Time
         now_utc = datetime.now(timezone.utc)
@@ -246,9 +288,16 @@ class YamcsRosBridge(Node):
         ts_utc = now_utc.isoformat()  
 
         # File name 
-        base = now_utc.strftime("%Y%m%dT%H%M%S_%f")[:-3]
-        img_path = PHOTO_ROOT / f"{base}.jpg"
-        meta_path = PHOTO_ROOT / f"{base}.json" 
+        base_id = session_id[len("single-"):] if session_id.startswith("single-") else session_id
+        if seq is None:
+            stem = base_id
+        else:
+            stem = f"{base_id}__{seq:06d}"
+        img_path = PHOTO_ROOT / f"{stem}.jpg"
+        meta_path = PHOTO_ROOT / f"{stem}.json"
+        # base = now_utc.strftime("%Y%m%dT%H%M%S_%f")[:-3]
+        # img_path = PHOTO_ROOT / f"{base}.jpg"
+        # meta_path = PHOTO_ROOT / f"{base}.json" 
 
         # Check Frame and write to path
         if self._last_frame is None:
@@ -270,7 +319,12 @@ class YamcsRosBridge(Node):
             "battery": float(self._battery if self._battery else 0.0),
             "bucket": BUCKET_NAME,         
             "object_image": img_path.name, 
-            "object_json":  meta_path.name
+            "object_json":  meta_path.name,
+
+            "session_id": session_id,
+            "seq": 0 if seq is None else int(seq),
+            "interval_sec": None if interval_sec is None else float(interval_sec),
+            "command_time_utc": command_time_utc,
         }
 
         with open(meta_path, "w") as f:
@@ -284,17 +338,10 @@ class YamcsRosBridge(Node):
     def _publish_last_photo_params(self, meta: dict):
         # Telemetry parameters 
         params = [                                                   
-            {"id":{"name":"/leorover/CAM/last_photo_bucket"}, "engValue":{"type":"STRING","stringValue": meta["bucket"]}},
-            {"id":{"name":"/leorover/CAM/last_photo_object"}, "engValue":{"type":"STRING","stringValue": meta["object_image"]}},
-            {"id":{"name":"/leorover/CAM/last_photo_time_est"}, "engValue":{"type":"STRING","stringValue": meta["time_est"]}},
-            {"id":{"name":"/leorover/CAM/last_photo_time_utc"}, "engValue":{"type":"STRING","stringValue": meta["time_utc"]}},
-            # {"id":{"name":"/leorover/CAM/last_x"},              "engValue":{"type":"DOUBLE","doubleValue": meta["x"]}},
-            # {"id":{"name":"/leorover/CAM/last_y"},              "engValue":{"type":"DOUBLE","doubleValue": meta["y"]}},
-            # {"id":{"name":"/leorover/CAM/last_yaw"},            "engValue":{"type":"DOUBLE","doubleValue": meta["yaw"]}},
-            # {"id":{"name":"/leorover/CAM/last_linear_speed"},   "engValue":{"type":"DOUBLE","doubleValue": meta["linear_speed"]}},
-            # {"id":{"name":"/leorover/CAM/last_angular_speed"},  "engValue":{"type":"DOUBLE","doubleValue": meta["angular_speed"]}},
-            # {"id":{"name":"/leorover/CAM/last_distance_total"}, "engValue":{"type":"DOUBLE","doubleValue": meta["distance_total"]}},
-            # {"id":{"name":"/leorover/CAM/last_battery"},        "engValue":{"type":"DOUBLE","doubleValue": meta["battery"]}},
+            {"id":{"name":"/leorover/ODOM/last_photo_bucket"}, "engValue":{"type":"STRING","stringValue": meta["bucket"]}},
+            {"id":{"name":"/leorover/ODOM/last_photo_object"}, "engValue":{"type":"STRING","stringValue": meta["object_image"]}},
+            {"id":{"name":"/leorover/ODOM/last_photo_time_est"}, "engValue":{"type":"STRING","stringValue": meta["time_est"]}},
+            {"id":{"name":"/leorover/ODOM/last_photo_time_utc"}, "engValue":{"type":"STRING","stringValue": meta["time_utc"]}},
         ]
 
         payload = {"parameter": params}
@@ -330,7 +377,7 @@ class YamcsRosBridge(Node):
 
         # Parameter for last_photo_url
         payload = {"parameter":[
-            {"id":{"name":"/leorover/CAM/last_photo_url"},
+            {"id":{"name":"/leorover/ODOM/last_photo_url"},
              "engValue":{"type":"STRING","stringValue": url}}
         ]}
         self.param_sock.sendto(json.dumps(payload).encode("utf-8"),
@@ -400,6 +447,66 @@ class YamcsRosBridge(Node):
 
         self.get_logger().info("CFDP PDUs sent for image+json")
 
+
+
+    ############ Automatic Capture Image Functions ################
+
+    def _start_timed_capture(self, interval_sec: float, duration_sec: float):
+        interval = max(0.1, float(interval_sec))
+        mono_now = time.monotonic()
+
+        self._timed_active = True
+        self._timed_session_id, self._timed_command_time_utc = self._make_session_id(single=False)
+        self._timed_seq = 0
+        self._timed_interval = interval
+        self._timed_next_due_mono = mono_now  
+        self._timed_end_mono = (mono_now + float(duration_sec)) if duration_sec > 0 else None
+
+        self.get_logger().info(
+            f"TimedCapture START: session={self._timed_session_id}, interval={interval:.3f}s, "
+            f"duration={'∞' if self._timed_end_mono is None else f'{duration_sec:.1f}s'}"
+        )
+
+    def _stop_timed_capture(self, reason: str = "manual"):
+        if not self._timed_active:
+            return
+        self.get_logger().info(f"TimedCapture STOP ({reason}): session={self._timed_session_id}, last_seq={self._timed_seq-1}")
+        self._timed_active = False
+        self._timed_session_id = None
+        self._timed_seq = 0
+        self._timed_interval = None
+        self._timed_command_time_utc = None
+        self._timed_next_due_mono = None
+        self._timed_end_mono = None
+
+    def _timed_step(self):
+        if not self._timed_active:
+            return
+
+        mono_now = time.monotonic()
+
+        if self._timed_end_mono is not None and mono_now >= self._timed_end_mono:
+            self._stop_timed_capture(reason="duration")
+            return
+
+        if mono_now >= self._timed_next_due_mono:
+            try:
+                img_path, meta_path, meta = self._take_photo_and_write_files(
+                    session_id=self._timed_session_id,
+                    seq=self._timed_seq,
+                    interval_sec=self._timed_interval,
+                    command_time_utc=self._timed_command_time_utc,
+                )
+                self._publish_last_photo_params(meta)
+                self._upload_via_http(img_path, meta_path, meta)
+            except Exception as e:
+                self.get_logger().error(f"TimedCapture shot failed: {e}")
+
+            # schedule next shot
+            self._timed_seq += 1
+            self._timed_next_due_mono = mono_now + self._timed_interval
+
+
     ########### Function for Commands ###################################
 
     def poll_tc(self):
@@ -440,7 +547,10 @@ class YamcsRosBridge(Node):
 
                 elif cmd_id == 3:
                     try:
-                        img_path, meta_path, meta = self._take_photo_and_write_files()
+                        # img_path, meta_path, meta = self._take_photo_and_write_files() # Old
+                        session_id, cmd_time = self._make_session_id(single=True)
+                        img_path, meta_path, meta = self._take_photo_and_write_files(session_id=session_id, seq=None, interval_sec=None, command_time_utc=cmd_time)
+
                         self._publish_last_photo_params(meta)
                         # if USE_CFDP:
                         #     self._send_via_cfdp(img_path, meta_path)
@@ -448,6 +558,28 @@ class YamcsRosBridge(Node):
                         self._upload_via_http(img_path, meta_path, meta)
                     except Exception as e:
                         self.get_logger().error(f"TakePhoto failed: {e}")
+
+                elif cmd_id == 4:  # [4][interval_sec][duration_sec]
+                    interval_sec = None
+                    duration_sec = 0.0
+                    payload_len = len(pkt) - 1  # subtract 1 for the cmd_id byte
+
+                    if payload_len >= 8:
+                        interval_sec, duration_sec = struct.unpack('>ff', pkt[1:9])
+                    elif payload_len >= 4:
+                        (interval_sec,) = struct.unpack('>f', pkt[1:5])
+
+                    if interval_sec is None:
+                        self.get_logger().warn("StartTimedCapture missing interval_sec")
+                        continue
+
+                    try:
+                        self._start_timed_capture(interval_sec=float(interval_sec), duration_sec=float(duration_sec))
+                    except Exception as e:
+                        self.get_logger().error(f"StartTimedCapture failed: {e}")
+
+                elif cmd_id == 5: # To stop automatic photo cmd
+                    self._stop_timed_capture(reason="manual")
 
                 elif cmd_id == 0:  # Stop: [ID]
                     self._stop_active(clear_queue=True)
