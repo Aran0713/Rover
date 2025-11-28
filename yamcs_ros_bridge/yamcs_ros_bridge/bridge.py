@@ -13,6 +13,7 @@ from std_msgs.msg import Float32
 from sensor_msgs.msg import Image  
 from cv_bridge import CvBridge
 import cv2
+import csv
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import requests 
 
@@ -147,11 +148,6 @@ class YamcsRosBridge(Node):
                 {"id": {"name": "/leorover/ODOM/angular_speed"}, "engValue": {"type":"DOUBLE","doubleValue": float(self._ang)}},
                 {"id": {"name": "/leorover/ODOM/distance_total"}, "engValue": {"type":"DOUBLE","doubleValue": float(self._dist_total)}},
                 {"id": {"name": "/leorover/ODOM/battery"}, "engValue": {"type":"DOUBLE","doubleValue": float(self._battery)}},
-
-                # {"id":{"name":"/leorover/ODOM/last_photo_bucket"}, "engValue":{"type":"STRING","stringValue": ""}},
-                # {"id":{"name":"/leorover/ODOM/last_photo_object"}, "engValue":{"type":"STRING","stringValue": ""}},
-                # {"id":{"name":"/leorover/ODOM/last_photo_time_est"}, "engValue":{"type":"STRING","stringValue": ""}},
-                # {"id":{"name":"/leorover/ODOM/last_photo_time_utc"}, "engValue":{"type":"STRING","stringValue": ""}},
             ]
         }
         data = json.dumps(payload).encode('utf-8')
@@ -286,6 +282,7 @@ class YamcsRosBridge(Node):
         now_est = now_utc.astimezone(est)                            
         ts_est = now_est.strftime("%Y-%m-%d %H:%M:%S.%f %Z")        
         ts_utc = now_utc.isoformat()  
+        time_unix = now_utc.timestamp() # Unix timestamp
 
         # File name 
         base_id = session_id[len("single-"):] if session_id.startswith("single-") else session_id
@@ -295,9 +292,6 @@ class YamcsRosBridge(Node):
             stem = f"{base_id}__{seq:06d}"
         img_path = PHOTO_ROOT / f"{stem}.jpg"
         meta_path = PHOTO_ROOT / f"{stem}.json"
-        # base = now_utc.strftime("%Y%m%dT%H%M%S_%f")[:-3]
-        # img_path = PHOTO_ROOT / f"{base}.jpg"
-        # meta_path = PHOTO_ROOT / f"{base}.json" 
 
         # Check Frame and write to path
         if self._last_frame is None:
@@ -310,6 +304,7 @@ class YamcsRosBridge(Node):
         meta = {                                                     
             "time_est": ts_est,
             "time_utc": ts_utc,
+            "time_unix": float(time_unix),
             "x": float(self._prev_xy[0] if self._prev_xy else 0.0),
             "y": float(self._prev_xy[1] if self._prev_xy else 0.0),
             "yaw": float(self._last_yaw),
@@ -342,6 +337,7 @@ class YamcsRosBridge(Node):
             {"id":{"name":"/leorover/ODOM/last_photo_object"}, "engValue":{"type":"STRING","stringValue": meta["object_image"]}},
             {"id":{"name":"/leorover/ODOM/last_photo_time_est"}, "engValue":{"type":"STRING","stringValue": meta["time_est"]}},
             {"id":{"name":"/leorover/ODOM/last_photo_time_utc"}, "engValue":{"type":"STRING","stringValue": meta["time_utc"]}},
+            {"id":{"name":"/leorover/ODOM/last_photo_time_unix"}, "engValue":{"type":"DOUBLE","doubleValue": float(meta["time_unix"])}},
         ]
 
         payload = {"parameter": params}
@@ -393,7 +389,7 @@ class YamcsRosBridge(Node):
         }
         r = requests.post(f"{YAMCS_HTTP}/api/archive/{'leorover'}/events",
                           json=evt, auth=(HTTP_USER, HTTP_PASSWORD))
-        ########################## replace 'leorover' with actual instance name in the URL    ################## IMPORTANT
+        ########################## note: replace 'leorover' with actual instance name in the URL    #
         r.raise_for_status()
 
         self.get_logger().info(f"Uploaded to bucket {BUCKET_NAME} and posted event")
@@ -448,6 +444,84 @@ class YamcsRosBridge(Node):
         self.get_logger().info("CFDP PDUs sent for image+json")
 
 
+    ############# Building CSV File ################################
+
+    def _build_session_csv_from_json(self, session_id: str) -> Path | None:
+
+        base_id = session_id[len("single-"):] if session_id.startswith("single-") else session_id
+        rows = []
+
+        # Timed capture JSONs: <base_id>__000000.json
+        for meta_file in PHOTO_ROOT.glob(f"{base_id}__*.json"):
+            try:
+                with open(meta_file, "r") as f:
+                    meta = json.load(f)
+                rows.append(meta)
+            except Exception as e:
+                self.get_logger().warn(f"Failed to read meta JSON {meta_file}: {e}")
+
+        if not rows:
+            self.get_logger().warn(f"No JSON metadata found for session {session_id}")
+            return None
+
+        # Sort rows by seq
+        rows.sort(key=lambda m: m.get("seq", 0))
+
+        csv_path = PHOTO_ROOT / f"{base_id}.csv"
+
+        # CSV schema
+        fieldnames = [
+            "time_unix",
+            "time_utc",
+            "time_est",
+            "session_id",
+            "seq",
+            "x",
+            "y",
+            "yaw",
+            "linear_speed",
+            "angular_speed",
+            "distance_total",
+            "battery",
+            "bucket",
+            "object_image",
+            "object_json",
+            "interval_sec",
+            "command_time_utc",
+        ]
+
+        try:
+            with open(csv_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for meta in rows:
+                    row = {name: meta.get(name, "") for name in fieldnames}
+                    writer.writerow(row)
+        except Exception as e:
+            self.get_logger().error(f"Failed to write CSV {csv_path}: {e}")
+            return None
+
+        self.get_logger().info(f"Built CSV {csv_path} with {len(rows)} rows for session {session_id}")
+        return csv_path
+
+    def _upload_csv_to_yamcs(self, csv_path: Path):
+        try:
+            with open(csv_path, "rb") as f:
+                r = requests.post(
+                    f"{YAMCS_HTTP}/api/storage/buckets/{BUCKET_NAME}/objects/{csv_path.name}",
+                    data=f,
+                    headers={"Content-Type": "text/csv"},
+                    auth=(HTTP_USER, HTTP_PASSWORD),
+                    timeout=15,
+                )
+            r.raise_for_status()
+        except Exception as e:
+            self.get_logger().error(f"Failed to upload CSV {csv_path.name} to YAMCS: {e}")
+            return
+
+        self.get_logger().info(f"Uploaded CSV log {csv_path.name} to bucket {BUCKET_NAME}")
+
+
 
     ############ Automatic Capture Image Functions ################
 
@@ -470,7 +544,15 @@ class YamcsRosBridge(Node):
     def _stop_timed_capture(self, reason: str = "manual"):
         if not self._timed_active:
             return
-        self.get_logger().info(f"TimedCapture STOP ({reason}): session={self._timed_session_id}, last_seq={self._timed_seq-1}")
+
+        # Preserve the session id before resetting state
+        session_id = self._timed_session_id
+
+        self.get_logger().info(
+            f"TimedCapture STOP ({reason}): session={session_id}, last_seq={self._timed_seq-1}"
+        )
+        # self.get_logger().info(f"TimedCapture STOP ({reason}): session={self._timed_session_id}, last_seq={self._timed_seq-1}")
+
         self._timed_active = False
         self._timed_session_id = None
         self._timed_seq = 0
@@ -478,6 +560,14 @@ class YamcsRosBridge(Node):
         self._timed_command_time_utc = None
         self._timed_next_due_mono = None
         self._timed_end_mono = None
+
+        try:
+            if session_id is not None:
+                csv_path = self._build_session_csv_from_json(session_id)
+                if csv_path is not None:
+                    self._upload_csv_to_yamcs(csv_path)
+        except Exception as e:
+            self.get_logger().error(f"Failed to build CSV for timed session {session_id}: {e}")
 
     def _timed_step(self):
         if not self._timed_active:
