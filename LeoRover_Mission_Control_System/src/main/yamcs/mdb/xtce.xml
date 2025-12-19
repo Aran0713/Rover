@@ -118,6 +118,21 @@
         </CommandContainer>
       </MetaCommand>
 
+      <!-- 0x06: ManualDrive(linear_mps, angular_rps) -->
+      <MetaCommand name="ManualDrive" shortDescription="Real-time joystick manual drive command">
+        <ArgumentList>
+          <Argument name="linear_mps" argumentTypeRef="f32_be"/>
+          <Argument name="angular_rps" argumentTypeRef="f32_be"/>
+        </ArgumentList>
+        <CommandContainer name="ManualDriveC">
+          <EntryList>
+            <!-- fixed first byte 6 indicates ManualDrive -->
+            <FixedValueEntry binaryValue="6" sizeInBits="8"/>
+            <ArgumentRefEntry argumentRef="linear_mps"/>
+            <ArgumentRefEntry argumentRef="angular_rps"/>
+          </EntryList>
+        </CommandContainer>
+      </MetaCommand>
 
       <!-- 0xFF: Stop -->
       <MetaCommand name="Stop" shortDescription="Stop motion">

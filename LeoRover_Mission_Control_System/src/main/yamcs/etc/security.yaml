@@ -1,5 +1,5 @@
 # Enable authentication/authorization on the server
-enabled: true
+enabled: false # change back to true after
 
 # Use YAML-based users/roles
 authModules:

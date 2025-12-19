@@ -16,12 +16,16 @@ import cv2
 import csv
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import requests 
+import threading
 
 
 # YAMCS_PARAM_HOST = '127.0.0.1'
 YAMCS_PARAM_HOST = '10.0.0.186'
 YAMCS_PARAM_PORT = 10050      # udp-params-in - telemetry
 YAMCS_TC_LISTEN_PORT = 10051  # udp-tc-out - commands
+
+MISSION_SERVER_VIDEO_HOST = "10.0.0.186" 
+MISSION_SERVER_VIDEO_PORT = 9000
 
 # Photo upload constants
 PHOTO_ROOT = Path("~/ros_ws/leorover_photos").expanduser()
@@ -92,6 +96,11 @@ class YamcsRosBridge(Node):
         self.queue  = []       
         self._max_lin = 10.0 #    
         self._max_ang = 10.0  # 1.0
+
+        # Video streaming 
+        threading.Thread(target=self._video_stream_worker, daemon=True).start()
+        self.get_logger().info("Video streaming thread started")
+
 
         self.get_logger().info("Bridge Established")
 
@@ -596,6 +605,57 @@ class YamcsRosBridge(Node):
             self._timed_seq += 1
             self._timed_next_due_mono = mono_now + self._timed_interval
 
+    ########### Functions for Custom UI #################################################
+    
+    # Manual Drive (Driving with joystick) 
+    def _manual_drive(self, linear_mps: float, angular_rps: float):
+        # Constraints
+        # linear_mps = max(-0.5, min(0.5, float(linear_mps)))
+        # angular_rps = max(-1.0, min(1.0, float(angular_rps)))
+
+        twist = Twist()
+        twist.linear.x = linear_mps
+        twist.angular.z = angular_rps
+        self.cmd_pub.publish(twist)
+
+        # Cancel any other active commands
+        self.active = None
+        self.queue = []
+
+    # Continous stream of JPEG frames to MissionServer over TCP
+    def _video_stream_worker(self):
+
+        while True:
+            try:
+                # Connect to MissionServer 
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((MISSION_SERVER_VIDEO_HOST, MISSION_SERVER_VIDEO_PORT))
+                self.get_logger().info("Connected to MissionServer video stream")
+                
+                while True:
+                    if self._last_frame is None:
+                        time.sleep(0.02)
+                        continue
+
+                    # Encode to JPEG
+                    ret, jpeg = cv2.imencode('.jpg', self._last_frame)
+                    if not ret:
+                        continue
+
+                    data = jpeg.tobytes()
+                    size = len(data)
+
+                    # Send 4-byte length header then JPEG data
+                    sock.sendall(struct.pack(">I", size))
+                    sock.sendall(data)
+
+                    time.sleep(0.03)  # ~33 FPS max
+
+            except Exception as e:
+                self.get_logger().warn(f"Video stream error: {e}")
+                time.sleep(1)  
+
+
 
     ########### Function for Commands ###################################
 
@@ -670,6 +730,14 @@ class YamcsRosBridge(Node):
 
                 elif cmd_id == 5: # To stop automatic photo cmd
                     self._stop_timed_capture(reason="manual")
+
+                elif cmd_id == 6: # Manual Drive
+                    if len(pkt) < 9:
+                        self.get_logger().warn("ManualDrive packet too short")
+                        continue
+
+                    linear_mps, angular_rps = struct.unpack('>ff', pkt[1:9])
+                    self._manual_drive(linear_mps, angular_rps)
 
                 elif cmd_id == 0:  # Stop: [ID]
                     self._stop_active(clear_queue=True)
