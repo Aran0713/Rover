@@ -531,6 +531,33 @@ class YamcsRosBridge(Node):
         self.get_logger().info(f"Uploaded CSV log {csv_path.name} to bucket {BUCKET_NAME}")
 
 
+    def _publish_last_timed_csv_params(self, bucket: str, object_name: str):
+        url = f"{YAMCS_HTTP}/api/storage/buckets/{bucket}/objects/{object_name}"
+
+        payload = {
+            "parameter": [
+                {
+                    "id": {"name": "/leorover/ODOM/last_timed_csv_bucket"},
+                    "engValue": {"type": "STRING", "stringValue": bucket},
+                },
+                {
+                    "id": {"name": "/leorover/ODOM/last_timed_csv_object"},
+                    "engValue": {"type": "STRING", "stringValue": object_name},
+                },
+                {
+                    "id": {"name": "/leorover/ODOM/last_timed_csv_url"},
+                    "engValue": {"type": "STRING", "stringValue": url},
+                },
+            ]
+        }
+
+        self.param_sock.sendto(
+            json.dumps(payload).encode("utf-8"),
+            (YAMCS_PARAM_HOST, YAMCS_PARAM_PORT),
+        )
+
+        self.get_logger().info(f"Published last timed CSV telemetry: {object_name}")
+
 
     ############ Automatic Capture Image Functions ################
 
@@ -575,6 +602,7 @@ class YamcsRosBridge(Node):
                 csv_path = self._build_session_csv_from_json(session_id)
                 if csv_path is not None:
                     self._upload_csv_to_yamcs(csv_path)
+                    self._publish_last_timed_csv_params(BUCKET_NAME, csv_path.name)
         except Exception as e:
             self.get_logger().error(f"Failed to build CSV for timed session {session_id}: {e}")
 
