@@ -32,6 +32,10 @@
         <Parameter name="last_photo_time_utc" parameterTypeRef="string_ascii"/>
         <Parameter name="last_photo_time_unix" parameterTypeRef="float64"/>
 
+        <Parameter name="last_timed_csv_bucket" parameterTypeRef="string_ascii"/>
+        <Parameter name="last_timed_csv_object" parameterTypeRef="string_ascii"/>
+        <Parameter name="last_timed_csv_url"    parameterTypeRef="string_ascii"/>
+
         <Parameter name="x" parameterTypeRef="float64"/>
         <Parameter name="y" parameterTypeRef="float64"/>
         <Parameter name="yaw" parameterTypeRef="float64"/>
