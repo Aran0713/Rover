@@ -161,7 +161,7 @@ class YamcsRosBridge(Node):
         }
         data = json.dumps(payload).encode('utf-8')
         self.param_sock.sendto(data, (YAMCS_PARAM_HOST, YAMCS_PARAM_PORT))
-        self.get_logger().info(f"Data: {data}")
+        # self.get_logger().info(f"Data: {data}")
 
 
     ########## Drive Commands functions #############################################
@@ -254,7 +254,7 @@ class YamcsRosBridge(Node):
             # constant yaw rate
             w = max(0.0, min(self._max_ang, float(self.active["rate_rps"])))
             twist.angular.z = self.active["dir"] * w
-            self.get_logger().info(f"twist.linear.z: {twist.linear.z}")
+            self.get_logger().info(f"twist.angular.z: {twist.angular.z}")
 
         # Publish one step of motion
         self.cmd_pub.publish(twist)
@@ -637,18 +637,32 @@ class YamcsRosBridge(Node):
     
     # Manual Drive (Driving with joystick) 
     def _manual_drive(self, linear_mps: float, angular_rps: float):
-        # Constraints
-        # linear_mps = max(-0.5, min(0.5, float(linear_mps)))
-        # angular_rps = max(-1.0, min(1.0, float(angular_rps)))
+        # twist = Twist()
+        # twist.linear.x = linear_mps
+        # twist.angular.z = angular_rps
+        # self.cmd_pub.publish(twist)
 
+        # Cancel any other active commands
+        # self.active = None
+        # self.queue = []
+
+        dead = 0.02  # match your settings or slightly higher
+        if abs(linear_mps) < dead:
+            linear_mps = 0.0
+        if abs(angular_rps) < dead:
+            angular_rps = 0.0
+
+        # Publish
         twist = Twist()
         twist.linear.x = linear_mps
         twist.angular.z = angular_rps
         self.cmd_pub.publish(twist)
 
-        # Cancel any other active commands
-        self.active = None
-        self.queue = []
+        # Only override scripted commands if there is real manual intent
+        if linear_mps != 0.0 or angular_rps != 0.0:
+            self.active = None
+            self.queue = []
+
 
     # Continous stream of JPEG frames to MissionServer over TCP
     def _video_stream_worker(self):
@@ -764,7 +778,11 @@ class YamcsRosBridge(Node):
                         self.get_logger().warn("ManualDrive packet too short")
                         continue
 
+
                     linear_mps, angular_rps = struct.unpack('>ff', pkt[1:9])
+                    self._md_count = getattr(self, "_md_count", 0) + 1
+                    if self._md_count % 25 == 0:
+                        self.get_logger().info(f"ManualDrive RX. lin={linear_mps:.3f} ang={angular_rps:.3f}")
                     self._manual_drive(linear_mps, angular_rps)
 
                 elif cmd_id == 0:  # Stop: [ID]
